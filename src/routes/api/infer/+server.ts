@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { inferUnderneath } from '$lib/api/infer.js';
+import { inferRemovalResult } from '$lib/api/infer.js';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
@@ -11,7 +11,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	try {
-		const result = await inferUnderneath(image, zones, targets, request.signal);
+		const result = await inferRemovalResult(image, zones, targets, request.signal);
 		return json(result);
 	} catch (e) {
 		const message = e instanceof Error ? e.message : 'Inference failed';

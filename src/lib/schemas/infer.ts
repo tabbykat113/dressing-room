@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 export const inferResponse = z.object({
-	underneath: z
+	area_after: z
 		.string()
 		.describe(
-			'A concise description of what would be visible if the target item were removed. Describe the specific garment, skin, or body part that would be revealed, considering the character style, personality, and what other clothing is visible.'
+			'A concise description of what the affected area should look like after the target item is removed. Include both what is revealed (skin, underlayers) AND any neighboring items that must remain intact. For example: "bare legs and feet, with the black heeled shoes still on" or "a white undershirt, with the belt and pants unchanged".'
 		)
 });
 

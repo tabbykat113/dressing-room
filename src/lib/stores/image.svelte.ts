@@ -180,7 +180,7 @@ export const imageStore = {
 			if (data.error) throw new Error(data.error);
 
 			const labelStr = labels.join(', ');
-			const prompt = `Remove the ${labelStr} from this image. Underneath, ${data.underneath}. Fill in the area naturally with what would be visible.`;
+			const prompt = `Remove the ${labelStr} from this image. The area should show: ${data.area_after}.`;
 			console.log('[remove] enhanced prompt:', prompt);
 
 			// Reset editing state — sendEdit will set it again

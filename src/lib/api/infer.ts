@@ -4,18 +4,20 @@ import type { Zone } from '../schemas/detect.js';
 
 const INFER_MODEL = 'google/gemini-3-flash-preview';
 
-const INFER_INSTRUCTIONS = `You are analyzing an image of a character to predict what would be visible underneath a clothing item if it were removed.
+const INFER_INSTRUCTIONS = `You are analyzing an image of a character to predict what an area should look like after a clothing item is removed.
 
 Consider:
-- What other clothing is visible on the character that might extend under the item
+- What is underneath the item (other garments, bare skin, body parts)
+- What neighboring items are adjacent to or overlapping the item and must remain intact
 - The character's apparent style, setting, and personality
 - If the character is a known/recognizable one, what they would canonically wear
-- Whether the item is likely worn over bare skin or over another layer
-- The logical layering of the visible outfit
+- The logical layering and spatial relationships of the visible outfit
 
-Be specific and concise. For example: "black tights covering the legs and feet" or "bare skin" or "a white undershirt".`;
+Describe the complete expected state of the affected area after removal — both what is newly visible AND what nearby items should be preserved unchanged.
 
-export async function inferUnderneath(
+Be specific and concise. For example: "bare legs and feet, with the black heeled shoes still on" or "a white undershirt tucked into the pants, with the belt unchanged" or "bare skin, with the necklace and earrings still in place".`;
+
+export async function inferRemovalResult(
 	imageBase64: string,
 	zones: Zone[],
 	targets: string[],
@@ -29,7 +31,7 @@ ${zoneList}
 
 The user wants to remove: ${targetList}
 
-What would be visible underneath if ${targetList} were removed? Consider the full context of the image, the character, and the visible outfit layering.`;
+After removing ${targetList}, what should the affected area look like? Describe both what would be revealed and what neighboring items should remain unchanged.`;
 
 	const response = await openrouter.responses.create(
 		{
