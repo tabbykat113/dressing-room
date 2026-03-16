@@ -155,6 +155,46 @@ export const imageStore = {
 		}
 	},
 
+	async sendRemove(
+		targets: Zone[],
+		box?: [number, number, number, number],
+		cursor?: [number, number]
+	) {
+		if (!imageData || targets.length === 0) return;
+		editing = true;
+		error = null;
+		abortController = new AbortController();
+		try {
+			const labels = targets.map((z) => z.label);
+			const res = await fetch('/api/infer', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					image: imageData,
+					zones: [...zones],
+					targets: labels
+				}),
+				signal: abortController.signal
+			});
+			const data = await res.json();
+			if (data.error) throw new Error(data.error);
+
+			const labelStr = labels.join(', ');
+			const prompt = `Remove the ${labelStr} from this image. Underneath, ${data.underneath}. Fill in the area naturally with what would be visible.`;
+			console.log('[remove] enhanced prompt:', prompt);
+
+			// Reset editing state — sendEdit will set it again
+			editing = false;
+			abortController = null;
+			await this.sendEdit(prompt, box, cursor);
+		} catch (e) {
+			if (e instanceof DOMException && e.name === 'AbortError') return;
+			error = e instanceof Error ? e.message : 'Remove failed';
+			editing = false;
+			abortController = null;
+		}
+	},
+
 	hitTestZone(cursor: [number, number]): Zone | null {
 		const [cy, cx] = cursor;
 		const sorted = [...zones].sort((a, b) => b.z_index - a.z_index);

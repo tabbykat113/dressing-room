@@ -62,9 +62,7 @@
 		contextOpen = false;
 
 		if (action === 'remove' && contextZones.length > 0) {
-			const labels = contextZones.map((z) => z.label).join(', ');
-			const prompt = `Remove the ${labels} from this image. Fill in the area naturally.`;
-			imageStore.sendEdit(prompt, contextBox, contextCursor);
+			imageStore.sendRemove(contextZones, contextBox, contextCursor);
 			return;
 		}
 
