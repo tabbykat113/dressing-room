@@ -112,9 +112,9 @@
 				<button
 					class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700 disabled:opacity-50"
 					onclick={confirm}
-					disabled={imageStore.editing || !canConfirm()}
+					disabled={imageStore.busy || !canConfirm()}
 				>
-					{imageStore.editing ? 'Generating...' : 'Confirm'}
+					{imageStore.busy ? 'Generating...' : 'Confirm'}
 				</button>
 			</div>
 		</div>

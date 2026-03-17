@@ -62,9 +62,9 @@
 				<button
 					class="flex-1 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-700 disabled:opacity-50"
 					onclick={() => presetStore.apply()}
-					disabled={imageStore.editing}
+					disabled={imageStore.busy}
 				>
-					{imageStore.editing ? 'Applying...' : 'Apply'}
+					{imageStore.busy ? 'Applying...' : 'Apply'}
 				</button>
 				<button
 					class="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"

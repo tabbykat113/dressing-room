@@ -163,7 +163,7 @@
 		<button
 			class="rounded-lg bg-cyan-600 px-4 py-2 font-medium text-white transition-colors hover:bg-cyan-700 disabled:opacity-50"
 			onclick={() => imageStore.detectZones()}
-			disabled={imageStore.detecting || imageStore.editing}
+			disabled={imageStore.busy}
 		>
 			{imageStore.detecting
 				? 'Detecting...'
