@@ -28,10 +28,13 @@
 				class="relative flex-1 px-2 py-3 text-sm font-medium transition-colors {activeTab === tab.id
 					? 'border-b-2 border-cyan-600 text-cyan-600'
 					: 'text-gray-500 hover:text-gray-700'}"
-				onclick={() => (activeTab = tab.id)}
+				onclick={() => {
+					activeTab = tab.id;
+					if (tab.id === 'chat') imageStore.markChatRead();
+				}}
 			>
 				{tab.label}
-				{#if tab.id === 'chat' ? imageStore.chatLog.length > 0 : tab.id === 'prompt' ? presetStore.freePrompt.trim() : presetStore.hasSelection(tab.id)}
+				{#if tab.id === 'chat' ? imageStore.hasUnreadChat : tab.id === 'prompt' ? presetStore.freePrompt.trim() : presetStore.hasSelection(tab.id)}
 					<span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-cyan-500"></span>
 				{/if}
 			</button>

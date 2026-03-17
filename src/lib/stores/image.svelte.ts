@@ -25,6 +25,7 @@ let error = $state<string | null>(null);
 let showZones = $state(false);
 let profile = $state<Profile | null>(null);
 let chatLog = $state<ChatMessage[]>([]);
+let chatReadCount = $state(0);
 
 function currentEntry(): HistoryEntry | null {
 	if (historyIndex < 0 || historyIndex >= history.length) return null;
@@ -149,6 +150,12 @@ export const imageStore = {
 	get chatLog() {
 		return chatLog;
 	},
+	get hasUnreadChat() {
+		return chatLog.length > chatReadCount;
+	},
+	markChatRead() {
+		chatReadCount = chatLog.length;
+	},
 
 	abort() {
 		if (!job) return;
@@ -168,6 +175,7 @@ export const imageStore = {
 			jobPhase = null;
 			profile = null;
 			chatLog = [];
+			chatReadCount = 0;
 
 			const idx = appendEntry(image, [], null);
 			historyIndex = idx;
@@ -182,6 +190,7 @@ export const imageStore = {
 		error = null;
 		profile = null;
 		chatLog = [];
+		chatReadCount = 0;
 	},
 
 	restoreEntry(index: number) {
@@ -348,7 +357,7 @@ export const imageStore = {
 				signal: abort.signal
 			});
 
-			const reactionAction = `The user removed: ${labelStr}`;
+			const reactionAction = `The user removed: ${labelStr}. This revealed: ${inferData.area_after}`;
 			const reactionPromise = profile
 				? fetchReaction(profile, sourceZones, reactionAction, abort.signal)
 				: Promise.resolve(null);

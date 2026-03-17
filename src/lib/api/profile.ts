@@ -1,6 +1,8 @@
 import { openrouter } from './client.js';
 import { profileResponse, profileResponseJsonSchema, type Profile } from '../schemas/profile.js';
+import { logRequest, logResponse, classifyError } from './log.js';
 
+const TAG = 'profile';
 const PROFILE_MODEL = 'google/gemini-3-flash-preview';
 
 const PROFILE_INSTRUCTIONS = `You are analyzing an image of a character to build a profile for them.
@@ -12,45 +14,54 @@ If you recognize the character, use their canonical name and source material. If
 For the voice field, focus on how their dialogue would actually read — not just adjectives, but concrete speech patterns. For example: "speaks in short, clipped sentences with military jargon" or "bubbly and energetic, uses lots of exclamation marks and casual slang, occasionally drops in Japanese words like sugoi or kawaii".`;
 
 export async function generateProfile(imageBase64: string, signal?: AbortSignal): Promise<Profile> {
-	const response = await openrouter.responses.create(
-		{
-			model: PROFILE_MODEL,
-			instructions: PROFILE_INSTRUCTIONS,
-			input: [
-				{
-					role: 'developer',
-					content: [
-						{
-							type: 'input_image',
-							image_url: imageBase64,
-							detail: 'high'
-						},
-						{
-							type: 'input_text',
-							text: 'Analyze this character and build a profile for them.'
-						}
-					]
+	logRequest(TAG, PROFILE_MODEL);
+
+	let response;
+	try {
+		response = await openrouter.responses.create(
+			{
+				model: PROFILE_MODEL,
+				instructions: PROFILE_INSTRUCTIONS,
+				input: [
+					{
+						role: 'developer',
+						content: [
+							{
+								type: 'input_image',
+								image_url: imageBase64,
+								detail: 'high'
+							},
+							{
+								type: 'input_text',
+								text: 'Analyze this character and build a profile for them.'
+							}
+						]
+					}
+				],
+				text: {
+					format: {
+						type: 'json_schema',
+						name: 'profile_response',
+						schema: profileResponseJsonSchema,
+						strict: true
+					}
 				}
-			],
-			text: {
-				format: {
-					type: 'json_schema',
-					name: 'profile_response',
-					schema: profileResponseJsonSchema,
-					strict: true
-				}
-			}
-		},
-		{ signal }
-	);
+			},
+			{ signal }
+		);
+	} catch (e) {
+		throw new Error(classifyError(e, 'Profile'));
+	}
+
+	logResponse(TAG, response);
 
 	const text = response.output_text;
-	console.log('[profile] raw response text:', text);
+	console.log(`[${TAG}] raw response text:`, text);
 	const json: unknown = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
-	console.log('[profile] parsed JSON:', JSON.stringify(json, null, 2));
+	console.log(`[${TAG}] parsed JSON:`, JSON.stringify(json, null, 2));
 	const result = profileResponse.safeParse(json);
 	if (!result.success) {
-		throw new Error(`Failed to parse profile response: ${JSON.stringify(result.error)}`);
+		throw new Error(`Profile returned invalid data: ${JSON.stringify(result.error)}`);
 	}
 	return result.data;
 }

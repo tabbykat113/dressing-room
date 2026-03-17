@@ -1,7 +1,9 @@
 import { openrouter } from './client.js';
 import { inferResponse, inferResponseJsonSchema, type InferResponse } from '../schemas/infer.js';
 import type { Zone } from '../schemas/detect.js';
+import { logRequest, logResponse, classifyError } from './log.js';
 
+const TAG = 'infer';
 const INFER_MODEL = 'google/gemini-3-flash-preview';
 
 const INFER_INSTRUCTIONS = `You are analyzing an image of a character to predict what an area should look like after a clothing item is removed.
@@ -33,45 +35,54 @@ The user wants to remove: ${targetList}
 
 After removing ${targetList}, what should the affected area look like? Describe both what would be revealed and what neighboring items should remain unchanged.`;
 
-	const response = await openrouter.responses.create(
-		{
-			model: INFER_MODEL,
-			instructions: INFER_INSTRUCTIONS,
-			input: [
-				{
-					role: 'developer',
-					content: [
-						{
-							type: 'input_image',
-							image_url: imageBase64,
-							detail: 'high'
-						},
-						{
-							type: 'input_text',
-							text: prompt
-						}
-					]
+	logRequest(TAG, INFER_MODEL, `targets: ${targetList}`);
+
+	let response;
+	try {
+		response = await openrouter.responses.create(
+			{
+				model: INFER_MODEL,
+				instructions: INFER_INSTRUCTIONS,
+				input: [
+					{
+						role: 'developer',
+						content: [
+							{
+								type: 'input_image',
+								image_url: imageBase64,
+								detail: 'high'
+							},
+							{
+								type: 'input_text',
+								text: prompt
+							}
+						]
+					}
+				],
+				text: {
+					format: {
+						type: 'json_schema',
+						name: 'infer_response',
+						schema: inferResponseJsonSchema,
+						strict: true
+					}
 				}
-			],
-			text: {
-				format: {
-					type: 'json_schema',
-					name: 'infer_response',
-					schema: inferResponseJsonSchema,
-					strict: true
-				}
-			}
-		},
-		{ signal }
-	);
+			},
+			{ signal }
+		);
+	} catch (e) {
+		throw new Error(classifyError(e, 'Inference'));
+	}
+
+	logResponse(TAG, response);
 
 	const text = response.output_text;
-	console.log('[infer] raw response text:', text);
+	console.log(`[${TAG}] raw response text:`, text);
 	const json: unknown = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
-	console.log('[infer] parsed JSON:', JSON.stringify(json, null, 2));
+	console.log(`[${TAG}] parsed JSON:`, JSON.stringify(json, null, 2));
 	const result = inferResponse.safeParse(json);
 	if (!result.success) {
-		throw new Error(`Failed to parse infer response: ${JSON.stringify(result.error)}`);
+		throw new Error(`Inference returned invalid data: ${JSON.stringify(result.error)}`);
 	}
 	return result.data;
 }

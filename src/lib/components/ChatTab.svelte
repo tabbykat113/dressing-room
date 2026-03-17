@@ -1,5 +1,10 @@
 <script lang="ts">
 	import { imageStore } from '$lib/stores/image.svelte.js';
+
+	$effect(() => {
+		imageStore.chatLog.length;
+		imageStore.markChatRead();
+	});
 </script>
 
 <div class="flex h-full flex-col gap-3">

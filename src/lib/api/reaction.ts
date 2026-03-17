@@ -6,7 +6,9 @@ import {
 } from '../schemas/reaction.js';
 import type { Profile } from '../schemas/profile.js';
 import type { Zone } from '../schemas/detect.js';
+import { logRequest, logResponse, classifyError } from './log.js';
 
+const TAG = 'reaction';
 const REACTION_MODEL = 'google/gemini-3-flash-preview';
 
 export async function generateReaction(
@@ -33,34 +35,43 @@ What just happened: ${action}
 
 React in character.`;
 
-	const response = await openrouter.responses.create(
-		{
-			model: REACTION_MODEL,
-			instructions,
-			input: [
-				{
-					role: 'developer',
-					content: [{ type: 'input_text', text: prompt }]
+	logRequest(TAG, REACTION_MODEL, `action: "${action.slice(0, 100)}"`);
+
+	let response;
+	try {
+		response = await openrouter.responses.create(
+			{
+				model: REACTION_MODEL,
+				instructions,
+				input: [
+					{
+						role: 'developer',
+						content: [{ type: 'input_text', text: prompt }]
+					}
+				],
+				text: {
+					format: {
+						type: 'json_schema',
+						name: 'reaction_response',
+						schema: reactionResponseJsonSchema,
+						strict: true
+					}
 				}
-			],
-			text: {
-				format: {
-					type: 'json_schema',
-					name: 'reaction_response',
-					schema: reactionResponseJsonSchema,
-					strict: true
-				}
-			}
-		},
-		{ signal }
-	);
+			},
+			{ signal }
+		);
+	} catch (e) {
+		throw new Error(classifyError(e, 'Reaction'));
+	}
+
+	logResponse(TAG, response);
 
 	const text = response.output_text;
-	console.log('[reaction] raw response text:', text);
+	console.log(`[${TAG}] raw response text:`, text);
 	const json: unknown = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
 	const result = reactionResponse.safeParse(json);
 	if (!result.success) {
-		throw new Error(`Failed to parse reaction response: ${JSON.stringify(result.error)}`);
+		throw new Error(`Reaction returned invalid data: ${JSON.stringify(result.error)}`);
 	}
 	return result.data;
 }
