@@ -49,6 +49,42 @@ async function detectForImage(image: string, signal: AbortSignal): Promise<Zone[
 	return data.zones;
 }
 
+async function runAnalyze(image: string, entryIndex: number, signal: AbortSignal) {
+	jobPhase = 'detecting';
+	const [zonesResult, profileResult] = await Promise.allSettled([
+		detectForImage(image, signal),
+		fetch('/api/profile', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ image }),
+			signal
+		}).then((r) => r.json())
+	]);
+
+	if (signal.aborted) return;
+
+	if (zonesResult.status === 'fulfilled') {
+		history = history.map((e, i) => (i === entryIndex ? { ...e, zones: zonesResult.value } : e));
+	} else {
+		const e = zonesResult.reason;
+		if (e instanceof DOMException && e.name === 'AbortError') throw e;
+		error = e instanceof Error ? e.message : 'Detection failed';
+	}
+
+	if (profileResult.status === 'fulfilled' && !profileResult.value.error) {
+		profile = profileResult.value;
+		console.log('[profile] generated:', JSON.stringify(profile, null, 2));
+	} else {
+		console.warn('[profile] failed, reactions will be unavailable');
+	}
+}
+
+async function ensureAnalyzed(image: string, entryIndex: number, signal: AbortSignal) {
+	if (!profile) {
+		await runAnalyze(image, entryIndex, signal);
+	}
+}
+
 async function fetchReaction(
 	p: Profile,
 	zones: Zone[],
@@ -169,39 +205,15 @@ export const imageStore = {
 		const idx = historyIndex;
 		job = { abort, sourceIndex: idx };
 		error = null;
-
-		// Run detection and profile generation in parallel
-		jobPhase = 'detecting';
-		const [zonesResult, profileResult] = await Promise.allSettled([
-			detectForImage(entry.image, abort.signal),
-			fetch('/api/profile', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ image: entry.image }),
-				signal: abort.signal
-			}).then((r) => r.json())
-		]);
-
-		// Check abort before applying results
-		if (abort.signal.aborted) return;
-
-		if (zonesResult.status === 'fulfilled') {
-			history = history.map((e, i) => (i === idx ? { ...e, zones: zonesResult.value } : e));
-		} else {
-			const e = zonesResult.reason;
+		try {
+			await runAnalyze(entry.image, idx, abort.signal);
+		} catch (e) {
 			if (e instanceof DOMException && e.name === 'AbortError') return;
-			error = e instanceof Error ? e.message : 'Detection failed';
+			error = e instanceof Error ? e.message : 'Analysis failed';
+		} finally {
+			job = null;
+			jobPhase = null;
 		}
-
-		if (profileResult.status === 'fulfilled' && !profileResult.value.error) {
-			profile = profileResult.value;
-			console.log('[profile] generated:', JSON.stringify(profile, null, 2));
-		} else {
-			console.warn('[profile] failed, reactions will be unavailable');
-		}
-
-		job = null;
-		jobPhase = null;
 	},
 
 	async detectZones() {
@@ -233,14 +245,18 @@ export const imageStore = {
 		const entry = currentEntry();
 		if (!entry || job) return;
 
-		const sourceImage = entry.image;
-		const sourceZones = entry.zones;
 		const sourceIndex = historyIndex;
 		const abort = new AbortController();
 		job = { abort, sourceIndex };
-		jobPhase = 'editing';
 		error = null;
 		try {
+			await ensureAnalyzed(entry.image, sourceIndex, abort.signal);
+
+			// Re-read entry after potential analyze updated zones
+			const sourceImage = currentEntry()!.image;
+			const sourceZones = currentEntry()!.zones;
+
+			jobPhase = 'editing';
 			// Fire edit + reaction in parallel
 			const editPromise = fetch('/api/edit', {
 				method: 'POST',
@@ -293,14 +309,17 @@ export const imageStore = {
 		const entry = currentEntry();
 		if (!entry || job || targets.length === 0) return;
 
-		const sourceImage = entry.image;
-		const sourceZones = entry.zones;
 		const sourceIndex = historyIndex;
 		const abort = new AbortController();
 		job = { abort, sourceIndex };
-		jobPhase = 'editing';
 		error = null;
 		try {
+			await ensureAnalyzed(entry.image, sourceIndex, abort.signal);
+
+			const sourceImage = currentEntry()!.image;
+			const sourceZones = currentEntry()!.zones;
+
+			jobPhase = 'editing';
 			const labels = targets.map((z) => z.label);
 			const labelStr = labels.join(', ');
 
