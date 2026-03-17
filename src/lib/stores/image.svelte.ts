@@ -1,9 +1,15 @@
 import type { Zone } from '$lib/schemas/detect.js';
+import type { Profile } from '$lib/schemas/profile.js';
 
 export interface HistoryEntry {
 	image: string;
 	zones: Zone[];
 	parentIndex: number | null;
+}
+
+export interface ChatMessage {
+	name: string;
+	text: string;
 }
 
 interface Job {
@@ -14,9 +20,11 @@ interface Job {
 let history = $state<HistoryEntry[]>([]);
 let historyIndex = $state(-1);
 let job = $state<Job | null>(null);
-let jobPhase = $state<'detecting' | 'editing' | null>(null);
+let jobPhase = $state<'detecting' | 'editing' | 'profiling' | null>(null);
 let error = $state<string | null>(null);
 let showZones = $state(false);
+let profile = $state<Profile | null>(null);
+let chatLog = $state<ChatMessage[]>([]);
 
 function currentEntry(): HistoryEntry | null {
 	if (historyIndex < 0 || historyIndex >= history.length) return null;
@@ -41,6 +49,30 @@ async function detectForImage(image: string, signal: AbortSignal): Promise<Zone[
 	return data.zones;
 }
 
+async function fetchReaction(
+	p: Profile,
+	zones: Zone[],
+	action: string,
+	signal: AbortSignal
+): Promise<string | null> {
+	try {
+		const res = await fetch('/api/reaction', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ profile: p, zones, action }),
+			signal
+		});
+		const data = await res.json();
+		if (data.error) {
+			console.warn('[reaction] error:', data.error);
+			return null;
+		}
+		return data.message;
+	} catch {
+		return null;
+	}
+}
+
 export const imageStore = {
 	get imageData() {
 		return currentEntry()?.image ?? null;
@@ -60,6 +92,9 @@ export const imageStore = {
 	get editing() {
 		return jobPhase === 'editing';
 	},
+	get profiling() {
+		return jobPhase === 'profiling';
+	},
 	get error() {
 		return error;
 	},
@@ -72,6 +107,12 @@ export const imageStore = {
 	get busy() {
 		return job !== null;
 	},
+	get profile() {
+		return profile;
+	},
+	get chatLog() {
+		return chatLog;
+	},
 
 	abort() {
 		if (!job) return;
@@ -82,31 +123,18 @@ export const imageStore = {
 
 	loadFile(file: File) {
 		const reader = new FileReader();
-		reader.onload = async () => {
+		reader.onload = () => {
 			const image = reader.result as string;
 			history = [];
 			historyIndex = -1;
 			error = null;
 			job = null;
 			jobPhase = null;
+			profile = null;
+			chatLog = [];
 
-			// Show the image immediately with empty zones
 			const idx = appendEntry(image, [], null);
 			historyIndex = idx;
-
-			const abort = new AbortController();
-			job = { abort, sourceIndex: idx };
-			jobPhase = 'detecting';
-			try {
-				const zones = await detectForImage(image, abort.signal);
-				history = history.map((e, i) => (i === idx ? { ...e, zones } : e));
-			} catch (e) {
-				if (e instanceof DOMException && e.name === 'AbortError') return;
-				error = e instanceof Error ? e.message : 'Detection failed';
-			} finally {
-				job = null;
-				jobPhase = null;
-			}
 		};
 		reader.readAsDataURL(file);
 	},
@@ -116,6 +144,8 @@ export const imageStore = {
 		history = [];
 		historyIndex = -1;
 		error = null;
+		profile = null;
+		chatLog = [];
 	},
 
 	restoreEntry(index: number) {
@@ -131,6 +161,49 @@ export const imageStore = {
 		historyIndex = 0;
 	},
 
+	async analyze() {
+		const entry = currentEntry();
+		if (!entry || job) return;
+
+		const abort = new AbortController();
+		const idx = historyIndex;
+		job = { abort, sourceIndex: idx };
+		error = null;
+
+		// Run detection and profile generation in parallel
+		jobPhase = 'detecting';
+		const [zonesResult, profileResult] = await Promise.allSettled([
+			detectForImage(entry.image, abort.signal),
+			fetch('/api/profile', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ image: entry.image }),
+				signal: abort.signal
+			}).then((r) => r.json())
+		]);
+
+		// Check abort before applying results
+		if (abort.signal.aborted) return;
+
+		if (zonesResult.status === 'fulfilled') {
+			history = history.map((e, i) => (i === idx ? { ...e, zones: zonesResult.value } : e));
+		} else {
+			const e = zonesResult.reason;
+			if (e instanceof DOMException && e.name === 'AbortError') return;
+			error = e instanceof Error ? e.message : 'Detection failed';
+		}
+
+		if (profileResult.status === 'fulfilled' && !profileResult.value.error) {
+			profile = profileResult.value;
+			console.log('[profile] generated:', JSON.stringify(profile, null, 2));
+		} else {
+			console.warn('[profile] failed, reactions will be unavailable');
+		}
+
+		job = null;
+		jobPhase = null;
+	},
+
 	async detectZones() {
 		const entry = currentEntry();
 		if (!entry || job) return;
@@ -141,7 +214,6 @@ export const imageStore = {
 		error = null;
 		try {
 			const zones = await detectForImage(entry.image, abort.signal);
-			// Update the current entry's zones in place
 			const idx = historyIndex;
 			history = history.map((e, i) => (i === idx ? { ...e, zones } : e));
 		} catch (e) {
@@ -162,19 +234,28 @@ export const imageStore = {
 		if (!entry || job) return;
 
 		const sourceImage = entry.image;
+		const sourceZones = entry.zones;
 		const sourceIndex = historyIndex;
 		const abort = new AbortController();
 		job = { abort, sourceIndex };
 		jobPhase = 'editing';
 		error = null;
 		try {
-			const res = await fetch('/api/edit', {
+			// Fire edit + reaction in parallel
+			const editPromise = fetch('/api/edit', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ image: sourceImage, prompt, box, cursor }),
 				signal: abort.signal
 			});
-			const data = await res.json();
+
+			const reactionPromise = profile
+				? fetchReaction(profile, sourceZones, prompt, abort.signal)
+				: Promise.resolve(null);
+
+			const [editRes, reactionText] = await Promise.all([editPromise, reactionPromise]);
+
+			const data = await editRes.json();
 			if (data.error) throw new Error(data.error);
 			const newImage = data.image.startsWith('data:')
 				? data.image
@@ -186,11 +267,15 @@ export const imageStore = {
 			try {
 				newZones = await detectForImage(newImage, abort.signal);
 			} catch {
-				// Detection failure is non-fatal — still add the entry
+				// Detection failure is non-fatal
 			}
 
 			const idx = appendEntry(newImage, newZones, sourceIndex);
 			historyIndex = idx;
+
+			if (reactionText && profile) {
+				chatLog = [...chatLog, { name: profile.name, text: reactionText }];
+			}
 		} catch (e) {
 			if (e instanceof DOMException && e.name === 'AbortError') return;
 			error = e instanceof Error ? e.message : 'Edit failed';
@@ -217,6 +302,9 @@ export const imageStore = {
 		error = null;
 		try {
 			const labels = targets.map((z) => z.label);
+			const labelStr = labels.join(', ');
+
+			// Infer removal result
 			const inferRes = await fetch('/api/infer', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -230,16 +318,24 @@ export const imageStore = {
 			const inferData = await inferRes.json();
 			if (inferData.error) throw new Error(inferData.error);
 
-			const labelStr = labels.join(', ');
 			const prompt = `Remove the ${labelStr} from this image. The area should show: ${inferData.area_after}.`;
 			console.log('[remove] enhanced prompt:', prompt);
 
-			const editRes = await fetch('/api/edit', {
+			// Fire edit + reaction in parallel
+			const editPromise = fetch('/api/edit', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ image: sourceImage, prompt, box, cursor }),
 				signal: abort.signal
 			});
+
+			const reactionAction = `The user removed: ${labelStr}`;
+			const reactionPromise = profile
+				? fetchReaction(profile, sourceZones, reactionAction, abort.signal)
+				: Promise.resolve(null);
+
+			const [editRes, reactionText] = await Promise.all([editPromise, reactionPromise]);
+
 			const editData = await editRes.json();
 			if (editData.error) throw new Error(editData.error);
 			const newImage = editData.image.startsWith('data:')
@@ -256,6 +352,10 @@ export const imageStore = {
 
 			const idx = appendEntry(newImage, newZones, sourceIndex);
 			historyIndex = idx;
+
+			if (reactionText && profile) {
+				chatLog = [...chatLog, { name: profile.name, text: reactionText }];
+			}
 		} catch (e) {
 			if (e instanceof DOMException && e.name === 'AbortError') return;
 			error = e instanceof Error ? e.message : 'Remove failed';

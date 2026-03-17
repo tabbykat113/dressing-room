@@ -162,11 +162,11 @@
 	<div class="flex items-center gap-4">
 		<button
 			class="rounded-lg bg-cyan-600 px-4 py-2 font-medium text-white transition-colors hover:bg-cyan-700 disabled:opacity-50"
-			onclick={() => imageStore.detectZones()}
+			onclick={() => (imageStore.profile ? imageStore.detectZones() : imageStore.analyze())}
 			disabled={imageStore.busy}
 		>
-			{imageStore.detecting
-				? 'Detecting...'
+			{imageStore.detecting || imageStore.profiling
+				? 'Analyzing...'
 				: imageStore.zones.length
 					? 'Re-analyze'
 					: 'Analyze Clothing'}
@@ -220,6 +220,8 @@
 				Detected {imageStore.zones.length} item{imageStore.zones.length === 1 ? '' : 's'}.
 				Right-click the image to add or replace clothing.
 			</p>
+		{:else}
+			<p>Click <strong>Analyze Clothing</strong> to detect items in the image.</p>
 		{/if}
 	</div>
 

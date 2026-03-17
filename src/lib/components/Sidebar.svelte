@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PresetListTab from './PresetListTab.svelte';
 	import PromptTab from './PromptTab.svelte';
+	import ChatTab from './ChatTab.svelte';
 	import { categories } from '$lib/presets.js';
 	import { presetStore } from '$lib/stores/presets.svelte.js';
 	import { imageStore } from '$lib/stores/image.svelte.js';
@@ -9,7 +10,8 @@
 
 	const tabs = [
 		...categories.map((c) => ({ id: c.id, label: c.label })),
-		{ id: 'prompt', label: 'Prompt' }
+		{ id: 'prompt', label: 'Prompt' },
+		{ id: 'chat', label: 'Chat' }
 	];
 
 	let activeTab = $state<Tab>('outfits');
@@ -29,7 +31,7 @@
 				onclick={() => (activeTab = tab.id)}
 			>
 				{tab.label}
-				{#if tab.id === 'prompt' ? presetStore.freePrompt.trim() : presetStore.hasSelection(tab.id)}
+				{#if tab.id === 'chat' ? imageStore.chatLog.length > 0 : tab.id === 'prompt' ? presetStore.freePrompt.trim() : presetStore.hasSelection(tab.id)}
 					<span class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-cyan-500"></span>
 				{/if}
 			</button>
@@ -41,6 +43,8 @@
 			<PresetListTab category={activeCategory} />
 		{:else if activeTab === 'prompt'}
 			<PromptTab />
+		{:else if activeTab === 'chat'}
+			<ChatTab />
 		{/if}
 	</div>
 
